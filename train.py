@@ -7,7 +7,7 @@ import lightning as pl
 import stable_pretraining as spt
 import stable_worldmodel as swm
 import torch
-from lightning.pytorch.loggers import WandbLogger
+from lightning.pytorch.loggers import CSVLogger, WandbLogger
 from omegaconf import OmegaConf, open_dict
 
 from module import SIGReg
@@ -77,6 +77,9 @@ def run(cfg):
 
     train = torch.utils.data.DataLoader(train_set, **cfg.loader,shuffle=True, drop_last=True, generator=rnd_gen)
     val = torch.utils.data.DataLoader(val_set, **cfg.loader, shuffle=False, drop_last=False)
+
+    train_batches = len(train)
+    cfg.scheduler.max_steps = train_batches * cfg.trainer.max_epochs
     
     ##############################
     ##       model / optim      ##
@@ -88,8 +91,14 @@ def run(cfg):
         'model_opt': {
             "modules": 'model',
             "optimizer": dict(cfg.optimizer),
-            "scheduler": {"type": "LinearWarmupCosineAnnealingLR"},
-            "interval": "epoch",
+            "scheduler": {
+                "type": "LinearWarmupCosineAnnealingLR",
+                "warmup_steps": cfg.scheduler.warmup_steps,
+                "max_steps": cfg.scheduler.max_steps,
+                "warmup_start_lr": 0.0,
+                "eta_min": 0.0,
+            },
+            "interval": "step",
         },
     }
 
@@ -108,12 +117,20 @@ def run(cfg):
     run_id = cfg.get("subdir") or ""
     run_dir = Path(swm.data.utils.get_cache_dir(sub_folder='checkpoints'), run_id)
 
-    logger = None
-    if cfg.wandb.enabled:
-        logger = WandbLogger(**cfg.wandb.config)
-        logger.log_hyperparams(OmegaConf.to_container(cfg))
-
     run_dir.mkdir(parents=True, exist_ok=True)
+    loggers = [
+        CSVLogger(
+            save_dir=run_dir,
+            name="logs",
+            flush_logs_every_n_steps=50,
+        )
+    ]
+    if cfg.wandb.enabled:
+        wandb_logger = WandbLogger(**cfg.wandb.config)
+        wandb_logger.log_hyperparams(OmegaConf.to_container(cfg))
+        loggers.append(wandb_logger)
+    logger = loggers[0] if len(loggers) == 1 else loggers
+
     with open(run_dir / "config.yaml", "w") as f:
         OmegaConf.save(cfg, f)
 

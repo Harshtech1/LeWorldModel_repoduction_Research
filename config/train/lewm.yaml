@@ -15,10 +15,10 @@ embed_dim: 192
 history_size: 3
 
 trainer:
-  max_epochs: 100
+  max_epochs: 10
   devices: auto
   accelerator: gpu
-  precision: bf16
+  precision: bf16-mixed
   gradient_clip_val: 1.0
 
 loader:
@@ -30,14 +30,19 @@ loader:
 
 optimizer:
   type: AdamW
-  lr: 5e-5
+  lr: ${scheduler.max_lr}
   weight_decay: 1e-3
 
 num_preds: 1
 
 loss:
   sigreg:
-    weight: 0.09
+    weight: 0.1
     kwargs:
       knots: 17
       num_proj: 1024
+
+scheduler:
+  warmup_steps: 1000
+  max_steps: null
+  max_lr: 5e-5
